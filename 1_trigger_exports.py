@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 
 # Configuration
-PORTAL_ID = os.environ.get("HUBSPOT_PORTAL_ID", "26230674")
+PORTAL_ID = os.environ.get("HUBSPOT_PORTAL_ID", "").strip() or "26230674"
 CSRF_TOKEN = os.environ.get("HUBSPOT_CSRF_TOKEN", "").strip()
 HUBSPOTAPI_COOKIE = os.environ.get("HUBSPOT_API_COOKIE", "").strip()
 
