@@ -25,8 +25,8 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 # Configuration
-HUBSPOT_TOKEN = os.environ.get("HUBSPOT_TOKEN", "")
-SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "1JoVGtUF3oPCUPye3StilDel_pbnwrO0DP6woA58zGxQ")
+HUBSPOT_TOKEN = os.environ.get("HUBSPOT_TOKEN", "").strip()
+SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "").strip() or "1JoVGtUF3oPCUPye3StilDel_pbnwrO0DP6woA58zGxQ"
 DOWNLOAD_LINKS_FILE = Path(__file__).parent / "download_links.json"
 
 
