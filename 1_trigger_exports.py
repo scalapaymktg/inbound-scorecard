@@ -18,8 +18,8 @@ from pathlib import Path
 
 # Configuration
 PORTAL_ID = os.environ.get("HUBSPOT_PORTAL_ID", "26230674")
-CSRF_TOKEN = os.environ.get("HUBSPOT_CSRF_TOKEN", "AAccUfvRZHnwrDLfFKvBBLR-I2494iVocL_XAQMsbC4Io7VMEgP_IjKQ17SppP50CjBlofaxqpMGBcPG8B2nIeFrnrHAUctLcw")
-HUBSPOTAPI_COOKIE = os.environ.get("HUBSPOT_API_COOKIE", "")
+CSRF_TOKEN = os.environ.get("HUBSPOT_CSRF_TOKEN", "").strip()
+HUBSPOTAPI_COOKIE = os.environ.get("HUBSPOT_API_COOKIE", "").strip()
 
 EXPORT_URL = f"https://app-eu1.hubspot.com/api/reporting-platform/v1/report-definition/export?portalId={PORTAL_ID}&clienttimeout=30000"
 
