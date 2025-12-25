@@ -1,0 +1,31 @@
+# Credentials and tokens (secrets)
+token.json
+credentials.json
+
+# Generated files
+download_links.json
+email_body.html
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+.env
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug/test files
+debug_*.py
+test_*.py

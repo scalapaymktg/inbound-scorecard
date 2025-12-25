@@ -1,0 +1,101 @@
+name: Manual HubSpot Reports
+
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        description: 'Which step to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - 1-trigger
+          - 2-find-links
+          - 3-download-upload
+
+jobs:
+  step-1-trigger:
+    name: "Step 1: Trigger Exports"
+    runs-on: ubuntu-latest
+    if: github.event.inputs.step == 'all' || github.event.inputs.step == '1-trigger'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Trigger HubSpot exports
+        env:
+          HUBSPOT_PORTAL_ID: ${{ secrets.HUBSPOT_PORTAL_ID }}
+          HUBSPOT_CSRF_TOKEN: ${{ secrets.HUBSPOT_CSRF_TOKEN }}
+          HUBSPOT_API_COOKIE: ${{ secrets.HUBSPOT_API_COOKIE }}
+        run: python 1_trigger_exports.py
+
+  step-2-find-links:
+    name: "Step 2: Find Download Links"
+    runs-on: ubuntu-latest
+    needs: [step-1-trigger]
+    if: always() && (github.event.inputs.step == 'all' || github.event.inputs.step == '2-find-links')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install google-auth google-auth-oauthlib google-api-python-client
+
+      - name: Wait for emails (if running all steps)
+        if: github.event.inputs.step == 'all'
+        run: |
+          echo "Waiting 2 minutes for HubSpot emails to arrive..."
+          sleep 120
+
+      - name: Find download links from Gmail
+        env:
+          GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
+        run: python 2_find_download_links.py
+
+      - name: Upload download links artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: download-links
+          path: download_links.json
+          retention-days: 1
+
+  step-3-download-upload:
+    name: "Step 3: Download & Upload"
+    runs-on: ubuntu-latest
+    needs: [step-2-find-links]
+    if: always() && (github.event.inputs.step == 'all' || github.event.inputs.step == '3-download-upload')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests pandas google-auth google-auth-oauthlib google-api-python-client
+
+      - name: Download links artifact
+        if: github.event.inputs.step == 'all'
+        uses: actions/download-artifact@v4
+        with:
+          name: download-links
+
+      - name: Download and upload to Sheets
+        env:
+          GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
+          HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+        run: python 3_download_and_upload.py
