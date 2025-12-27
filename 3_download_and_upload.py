@@ -26,7 +26,7 @@ from googleapiclient.discovery import build
 
 # Configuration
 HUBSPOT_TOKEN = os.environ.get("HUBSPOT_TOKEN", "").strip()
-SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "").strip() or "1JoVGtUF3oPCUPye3StilDel_pbnwrO0DP6woA58zGxQ"
+SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "").strip() or "1Fx9EWQxY9x8IVD4gRSSx631-fAFg0SWotzUR8WAMFyA"
 DOWNLOAD_LINKS_FILE = Path(__file__).parent / "download_links.json"
 
 
@@ -165,18 +165,32 @@ def ensure_sheet_exists(service, sheet_name):
         print(f"    Warning creating sheet: {e}")
 
 
+def col_num_to_letter(n):
+    """Convert column number to letter (1=A, 2=B, ..., 27=AA)."""
+    result = ""
+    while n > 0:
+        n, remainder = divmod(n - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
+
+
 def upload_to_sheets(service, df, sheet_name):
-    """Upload DataFrame to Google Sheets."""
+    """Upload DataFrame to Google Sheets (only data columns, preserves formulas to the right)."""
     ensure_sheet_exists(service, sheet_name)
 
     # Convert DataFrame
     df_clean = df.fillna("")
     values = [df_clean.columns.tolist()] + df_clean.values.tolist()
 
-    # Clear existing content
+    # Calculate column range (A to last column of data)
+    num_cols = len(df_clean.columns)
+    last_col = col_num_to_letter(num_cols)
+    data_range = f"{sheet_name}!A:{last_col}"
+
+    # Clear only data columns (not entire sheet)
     try:
         service.spreadsheets().values().clear(
-            spreadsheetId=SPREADSHEET_ID, range=f"{sheet_name}!A:ZZ"
+            spreadsheetId=SPREADSHEET_ID, range=data_range
         ).execute()
     except Exception:
         pass
@@ -260,7 +274,8 @@ def main():
             signed_url = get_signed_url(file_id)
 
             # Download and extract CSV
-            use_summary = (sheet_name != "SCohort Sales")
+            # SCohort uses raw file, all others use summary
+            use_summary = (sheet_name != "[raw] Scohort")
             df = download_and_extract_csv(signed_url, use_summary=use_summary)
 
             # Upload to Sheets

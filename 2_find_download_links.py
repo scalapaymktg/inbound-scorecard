@@ -14,7 +14,7 @@ import os
 import json
 import re
 import base64
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -22,29 +22,29 @@ from googleapiclient.discovery import build
 # Configuration
 PROCESSED_LABEL = "Automation/HubSpot-Processed"
 OUTPUT_FILE = Path(__file__).parent / "download_links.json"
+MAX_EMAIL_AGE_MINUTES = 30  # Ignore emails older than this
 
 # All reports to find (report name -> sheet name)
 REPORTS = {
-    "Time - Create Deal to KYC - Inbound Scorecard": "Time Create Deal to KYC",
-    "Qualified Automated - Inbound Scorecard": "Qualified Automated",
-    "Click Time - KYC to Click - Inbound Scorecard": "Click Time KYC to Click",
-    "QualSales - Inbound Scorecard": "QualSales",
-    "Won Sales - Inbound Scorecard": "Won Sales",
-    "Days Sales - Inbound Scorecard": "Days Sales",
+    "TTL Automated - Inbound Scorecard": "[raw] TTL",
+    "Cohort Won Automated - Inbound Scorecard": "Cohort Won",
+    "SQL Inbound - Sales - Inbound Scorecard": "[raw] SQL",
+    "SCohort - Sales - Inbound Scorecard": "[raw] Scohort",
+    "CTR KYC Email Performance - Inbound Scorecard": "[raw] CTR",
+    "Cohort CTR KYC Email Performance - Inbound Scorecard": "Cohort CTR",
+    "Cohort OnbComplt Automated - Inbound Scorecard": "Cohort Onboarded",
+    "Cohort KYC Automated - Inbound Scorecard": "Cohort KYC",
     "Cohort Qualified - Inbound Scorecard": "Cohort Qualified",
-    "NBM - Inbound Scorecard": "NBM",
-    "NEW Inbound Automated - Inbound Scorecard": "NEW Inbound Automated",
-    "Cohort KYC Automated - Inbound Scorecard": "Cohort KYC Automated",
-    "Cohort OnbComplt Automated - Inbound Scorecard": "Cohort OnbComplt Automated",
-    "KYC Automated - Inbound Scorecard": "KYC Automated",
-    "CTR KYC Email Performance - Inbound Scorecard": "CTR KYC Email Performance",
-    "Cohort CTR KYC Email Performance - Inbound Scorecard": "Cohort CTR KYC Email Perf",
-    "Cohort Won Automated - Inbound Scorecard": "Cohort Won Automated",
-    "Won Automated - Inbound Scorecard": "Won Automated",
-    "Email Metrics - Inbound Scorecard": "Email Metrics",
-    "SCohort - Sales - Inbound Scorecard": "SCohort Sales",
-    "SQL Inbound - Sales - Inbound Scorecard": "SQL Inbound Sales",
-    "TTL Automated - Inbound Scorecard": "TTL Automated",
+    "Won Automated - Inbound Scorecard": "[raw] AutWon",
+    "KYC Automated - Inbound Scorecard": "[raw] KYC",
+    "NEW Inbound Automated - Inbound Scorecard": "[raw] Inbound",
+    "Won Sales - Inbound Scorecard": "[raw] Won",
+    "QualSales - Inbound Scorecard": "[raw] QualSales",
+    "NBM - Inbound Scorecard": "[raw] NBM",
+    "Qualified Automated - Inbound Scorecard": "[raw] Qualified",
+    "Time - Create Deal to KYC - Inbound Scorecard": "[raw] Receive",
+    "Click Time - KYC to Click - Inbound Scorecard": "[raw] Click",
+    "Email Metrics - Inbound Scorecard": "[raw] Email",
 }
 
 
@@ -109,14 +109,18 @@ def find_report_email(service, report_name):
     return messages[0]["id"] if messages else None
 
 
-def get_email_body(service, message_id):
-    """Get email body (HTML or plain text)."""
+def get_email_data(service, message_id):
+    """Get email body and timestamp."""
     message = (
         service.users()
         .messages()
         .get(userId="me", id=message_id, format="full")
         .execute()
     )
+
+    # Get timestamp (internalDate is in milliseconds)
+    internal_date_ms = int(message.get("internalDate", 0))
+    email_time = datetime.fromtimestamp(internal_date_ms / 1000, tz=timezone.utc)
 
     payload = message.get("payload", {})
     body_data = None
@@ -131,10 +135,11 @@ def get_email_body(service, message_id):
     else:
         body_data = payload.get("body", {}).get("data")
 
+    body = None
     if body_data:
-        return base64.urlsafe_b64decode(body_data).decode("utf-8")
+        body = base64.urlsafe_b64decode(body_data).decode("utf-8")
 
-    return None
+    return body, email_time
 
 
 def extract_cta_link(email_body):
@@ -166,10 +171,11 @@ def main():
     label_id = get_or_create_label(service, PROCESSED_LABEL)
 
     # Find all report emails
-    print(f"\nSearching for {len(REPORTS)} report emails...\n")
+    print(f"\nSearching for {len(REPORTS)} report emails (max {MAX_EMAIL_AGE_MINUTES} min old)...\n")
 
     download_links = {}
-    results = {"found": 0, "missing": 0}
+    results = {"found": 0, "missing": 0, "too_old": 0}
+    now = datetime.now(timezone.utc)
 
     for report_name, sheet_name in REPORTS.items():
         print(f"  {report_name}...", end=" ")
@@ -181,8 +187,16 @@ def main():
             results["missing"] += 1
             continue
 
-        # Get email body
-        email_body = get_email_body(service, message_id)
+        # Get email body and timestamp
+        email_body, email_time = get_email_data(service, message_id)
+
+        # Check email age
+        age_minutes = (now - email_time).total_seconds() / 60
+        if age_minutes > MAX_EMAIL_AGE_MINUTES:
+            print(f"TOO OLD ({int(age_minutes)} min)")
+            results["too_old"] += 1
+            continue
+
         if not email_body:
             print("NO BODY")
             results["missing"] += 1
@@ -202,7 +216,7 @@ def main():
             "label_id": label_id,
         }
 
-        print("OK")
+        print(f"OK ({int(age_minutes)} min ago)")
         results["found"] += 1
 
     # Save to JSON
@@ -218,8 +232,9 @@ def main():
     print("\n" + "=" * 60)
     print("SUMMARY")
     print("=" * 60)
-    print(f"  Found:   {results['found']}")
-    print(f"  Missing: {results['missing']}")
+    print(f"  Found:    {results['found']}")
+    print(f"  Too old:  {results['too_old']}")
+    print(f"  Missing:  {results['missing']}")
     print(f"\nSaved to: {OUTPUT_FILE}")
 
     if results["found"] > 0:
